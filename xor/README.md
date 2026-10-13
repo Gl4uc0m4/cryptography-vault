@@ -1,57 +1,119 @@
 # xorcrack
 
-A tool for breaking **repeating-key XOR ciphers** on readable text.
+A command-line tool for analyzing and breaking **repeating-key XOR ciphers** using frequency analysis and optional known-plaintext fragments.
 
-Built for learning: the code is commented to explain each step.
+Built for learning and experimenting with classical cryptanalysis techniques.
 
 ```text
 ciphertext[i] = plaintext[i] XOR key[i % len(key)]
 ```
 
+## Features
+
+- Estimates key length using the Index of Coincidence (IC) and Hamming distance.
+- Ranks possible key bytes using English or Spanish letter frequencies.
+- Refines key candidates by scoring the resulting plaintext.
+- Supports known-plaintext fragments through `--crib`.
+- Saves recovered plaintext to a file.
+- Requires no external dependencies.
+
+## Requirements
+
+- Python 3.8 or later
+- Python standard library only
+
 ## Usage
+
+Run the script from your terminal:
 
 ```bash
 python xorcrack.py message.bin
-python xorcrack.py message.bin --crib "HTB{"     # if you know part of the plaintext
-python xorcrack.py message.bin --k 5 -v          # force key length
-python xorcrack.py message.bin --lang en --out output.txt
 ```
 
-No external dependencies required (Python 3.8+ only).
+### Common options
+
+```bash
+# Show additional analysis information
+python xorcrack.py message.bin -v
+
+# Force a specific key length
+python xorcrack.py message.bin --k 5
+
+# Search a wider range of key lengths
+python xorcrack.py message.bin --maxk 80
+
+# Select the plaintext language model
+python xorcrack.py message.bin --lang en
+python xorcrack.py message.bin --lang es
+
+# Provide a known plaintext fragment
+python xorcrack.py message.bin --crib "HTB{"
+
+# Save the decrypted output
+python xorcrack.py message.bin --out output.txt
+```
+
+Options can be combined:
+
+```bash
+python xorcrack.py message.bin --lang en --maxk 64 --out output.txt -v
+```
 
 ## How It Works
 
-1. **Key length:** Index of coincidence (IC) and Hamming distance.
+### 1. Key Length Estimation
 
-   When K is correct, the key cancels out when comparing blocks:
+The tool uses the Index of Coincidence (IC) and Hamming distance to rank possible key lengths.
 
-   `(p1 XOR k) XOR (p2 XOR k) = p1 XOR p2`
+When two ciphertext bytes are encrypted with the same repeating-key XOR position, XORing them cancels out the key:
 
-   This reveals the statistical properties of the underlying language.
+```text
+(c1 XOR k) XOR (c2 XOR k) = p1 XOR p2
+```
 
-2. **Each key byte:** The bytes in `d[i::K]` use the same key byte. All 256 possible values are tested and scored according to how closely they resemble readable text.
+This helps reveal statistical patterns in the original plaintext.
 
-3. **Joint refinement:** The best candidates for each key byte are tested by scoring the entire plaintext (letters + bigrams/trigrams). This corrects nearly correct keys (e.g., `a0` instead of `a9`).
+### 2. Key Byte Analysis
 
-4. **Optional crib:** If you know a fragment of the plaintext, the key bytes can be recovered using `key = ciphertext XOR crib`.
+For a candidate key length `K`, bytes at positions `i, i+K, i+2K, ...` share the same key byte.
 
-5. **Length penalty (MDL):** Longer keys can fit noise more easily, so a penalty is applied to avoid selecting multiples of the actual key length.
+The tool tests possible byte values and scores the resulting text using letter-frequency statistics.
+
+### 3. Key Refinement
+
+The strongest candidates for each key position are combined and evaluated against the complete plaintext. Letter frequencies and common character sequences help identify more plausible results.
+
+### 4. Known-Plaintext Recovery
+
+If part of the original plaintext is known, the `--crib` option can help recover the corresponding key bytes:
+
+```text
+key_byte = ciphertext_byte XOR plaintext_byte
+```
+
+This can be useful when the ciphertext is short or frequency analysis alone is inconclusive.
+
+### 5. Key Length Penalty
+
+Longer candidate keys can fit random patterns more easily. A penalty helps avoid selecting unnecessarily long keys, such as multiples of the actual key length.
 
 ## Limitations
 
-| Case | Does it work? |
+| Scenario | Expected result |
 |---|---|
-| Short repeating key, English/Spanish plaintext | Yes |
-| Very short text (< ~100 bytes) | Partially; use `--crib` |
-| Non-text original (.exe, .zip, image) | Only with `--crib` using a known file header (`MZ`, `PK`, etc.) |
-| Key that changes byte by byte (counter, PRNG) | No |
-| Key as long as the message (one-time pad) | No |
-| XOR combined with other layers (Base64, rotations) | Remove the other layers first |
+| Repeating-key XOR with English or Spanish text | Usually suitable |
+| Very short ciphertext (under ~100 bytes) | Less reliable; try `--crib` |
+| Binary files such as `.exe`, `.zip`, or images | May require a known header or plaintext fragment |
+| A key that changes for every byte | Not supported by this method |
+| One-time pad with a key as long as the message | Cannot be solved by this approach alone |
+| XOR combined with Base64 or other transformations | Remove the additional layers first |
 
-If all candidate key lengths have low, flat IC values (~0.004), the data is probably not encrypted with repeating-key XOR, and this script is not the right tool.
+If candidate key lengths produce consistently low and similar IC values (around `0.004`), the data may not be repeating-key XOR ciphertext.
+
+Results depend on the plaintext language and length. Readable output alone does not guarantee that the recovered key is correct.
 
 ## Practice Resources
 
-- [Cryptopals](https://cryptopals.com) — Set 1, Challenge 6.
+- [Cryptopals — Set 1, Challenge 6](https://cryptopals.com/sets/1/challenges/6)
 - [CryptoHack](https://cryptohack.org)
 - [picoCTF](https://picoctf.org)
